@@ -313,7 +313,7 @@ impl Maze {
             //self.print();
             //println!("Remaining cells left: {}", remaining_cells.len());
             //println!("Current steps: {}", current_path_steps.len());
-            //sleep(Duration::from_millis(50));
+            //sleep(Duration::from_millis(1));
         }
     }
 
@@ -332,7 +332,7 @@ impl Maze {
             print!("#");
             for x in 0..self.width {
                 if self.paths[y][x].visited {
-                    print!("{}", self.grid[y][x].to_string().red());
+                    print!("{}", "o".red());
                 } else {
                     print!("{}", self.grid[y][x].to_string().normal());
                 }
