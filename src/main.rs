@@ -4,12 +4,24 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use colored::*;
 
+#[derive(Clone, Copy)]
+struct DebugMode {
+    enabled: bool,
+    show_path_steps: bool,
+    show_complete_paths: bool,
+}
+
 fn main() {
-    let mut maze = Maze::new(151, 51);
+    let debug: DebugMode = DebugMode {
+        enabled: true,
+        show_path_steps: true,
+        show_complete_paths: true,
+    };
+    let maze_size = (101, 41);
+    let mut maze = Maze::new(maze_size.0, maze_size.1, debug);
     maze.generate_maze();
     maze.print();
     maze.find_path();
-    //maze.print();
 }
 
 #[derive(Clone, Copy)]
@@ -50,10 +62,11 @@ struct Maze {
     paths: Vec<Vec<Path>>,
     width: usize,
     height: usize,
+    debug: DebugMode,
 }
 
 impl Maze {
-    fn new(new_width: usize, new_height: usize) -> Self {
+    fn new(new_width: usize, new_height: usize, debug: DebugMode) -> Self {
         let mut width = new_width;
         let mut height = new_height;
         if width % 2 == 0 {
@@ -98,7 +111,8 @@ impl Maze {
             cells,
             paths,
             width,
-            height
+            height,
+            debug,
         }
     }
 
