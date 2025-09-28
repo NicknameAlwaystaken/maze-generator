@@ -4,12 +4,47 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use colored::*;
 
+#[derive(Clone, Copy)]
+struct DebugMode {
+    enabled: bool,
+    show_path_steps: bool,
+    show_complete_paths: bool,
+    show_erased_paths: bool,
+
+    steps_ms: u64,
+    complete_ms: u64,
+    erased_ms: u64,
+}
+
+enum WalkOutcome {
+    Accepted,
+    Erased,
+    Restarted,
+}
+
+#[derive(Clone, Copy)]
+enum DebugMark {
+    None,
+    Accepted,
+    Erased,
+}
+
 fn main() {
-    let mut maze = Maze::new(151, 51);
+    let debug: DebugMode = DebugMode {
+        enabled: true,
+        show_path_steps: false,
+        show_complete_paths: true,
+        show_erased_paths: true,
+
+        steps_ms: 200,
+        complete_ms: 1000,
+        erased_ms: 200,
+    };
+    let maze_size = (101, 41);
+    let mut maze = Maze::new(maze_size.0, maze_size.1, debug);
     maze.generate_maze();
     maze.print();
     maze.find_path();
-    //maze.print();
 }
 
 #[derive(Clone, Copy)]
@@ -50,10 +85,14 @@ struct Maze {
     paths: Vec<Vec<Path>>,
     width: usize,
     height: usize,
+    debug: DebugMode,
+
+    // temporary highlights for debug rendering
+    debug_marks: Vec<Vec<DebugMark>>,
 }
 
 impl Maze {
-    fn new(new_width: usize, new_height: usize) -> Self {
+    fn new(new_width: usize, new_height: usize, debug: DebugMode) -> Self {
         let mut width = new_width;
         let mut height = new_height;
         if width % 2 == 0 {
@@ -93,12 +132,16 @@ impl Maze {
             vector
         };
 
+        let debug_marks = vec![vec![DebugMark::None; width]; height];
+
         Self {
             grid,
             cells,
             paths,
             width,
-            height
+            height,
+            debug,
+            debug_marks,
         }
     }
 
@@ -122,6 +165,8 @@ impl Maze {
             }
             vector
         };
+
+        self.debug_marks = vec![vec![DebugMark::None; self.width]; self.height];
     }
 
     fn find_path(&mut self) {
@@ -207,6 +252,7 @@ impl Maze {
                 }
             }
         }
+
         //println!("Remaining cells: {}", remaining_cells.len());
 
         let moves: [(i32, i32); 4] = [(2, 0), (0, 2), (-2, 0), (0, -2)];
@@ -215,7 +261,7 @@ impl Maze {
         let mut current_path_steps: Vec<(i32, i32)> = Vec::new();
         current_path_steps.push((cell_x, cell_y));
         let mut first_walk = true;
-        let mut erase_path = false;
+        let mut path_looped = false;
         loop {
             loop {
                 let (mut random_x, mut random_y) = moves.choose(&mut rng).unwrap();
@@ -234,7 +280,7 @@ impl Maze {
                 y >= 0 && y < self.height as i32 {
                     for (xi, yj) in current_path_steps.iter() {
                         if x == *xi && y == *yj {
-                            erase_path = true;
+                            path_looped = true;
                         }
                     }
                     prev_move_x = random_x;
@@ -248,72 +294,123 @@ impl Maze {
                 }
             }
             if !self.cells[cell_y as usize][cell_x as usize].visited {
+                // Case 1: reach unvisited cell, accept and continue walk
                 self.cells[cell_y as usize][cell_x as usize].visited = true;
-                remaining_cells = remaining_cells.into_iter().filter(|(xi, yj)| !self.cells[*yj as usize][*xi as usize].visited).collect::<Vec<(i32, i32)>>();
-                //println!("Continuing on cell: {},{}", cell_x, cell_y);
+
+                remaining_cells = remaining_cells
+                    .into_iter()
+                    .filter(|(xi, yj)| !self.cells[*yj as usize][*xi as usize].visited)
+                    .collect::<Vec<(i32, i32)>>();
             }
             else {
-                if first_walk && current_path_steps.len() / 2 >= 20  {
-                    erase_path = false;
-                    first_walk = false;
-                }
-                else if first_walk && erase_path{
-                    cell_x = rng.gen_range((0 / 2) as i32..(self.width / 2) as i32) * 2;
-                    cell_y = rng.gen_range((0 / 2) as i32..(self.height / 2) as i32) * 2;
-                    prev_move_x = 0;
-                    prev_move_y = 0;
-                    current_path_steps = Vec::new();
-                    self.reset_grid();
-                    remaining_cells = Vec::new();
-                    for i in 0..self.height {
-                        for j in 0..self.width {
-                            if !self.cells[i][j].visited {
-                                remaining_cells.push((j as i32, i as i32));
+                // Case 2: We hit already visited cell
+
+                let outcome = if first_walk {
+                    if current_path_steps.len() / 2 >= 20 {
+                        WalkOutcome::Accepted
+                    } else if path_looped {
+                        // First path looped into self and wasn't long enough
+                        WalkOutcome::Restarted
+                    } else {
+                        WalkOutcome::Accepted
+                    }
+                } else {
+                    if path_looped { WalkOutcome::Erased } else { WalkOutcome::Accepted }
+                };
+
+                match outcome {
+                    WalkOutcome::Accepted => {
+                        // First long-enough walk flips the flag once
+                        if first_walk && current_path_steps.len() / 2 >= 20 {
+                            first_walk = false;
+                        }
+
+                        if self.debug.enabled && self.debug.show_complete_paths {
+                            self.debug_mark_steps(current_path_steps.iter().cloned(), DebugMark::Accepted);
+                            self.print();
+                            println!("(debug) Accepted path length: {}", current_path_steps.len() / 2);
+                            sleep(Duration::from_millis(self.debug.complete_ms));
+                            self.debug_clear_marks();
+                        }
+
+                        path_looped = false; // reset for next walk
+                    }
+                    WalkOutcome::Erased => {
+                        if self.debug.enabled && self.debug.show_erased_paths {
+                            self.debug_mark_steps(current_path_steps.iter().cloned(), DebugMark::Erased);
+                            self.print();
+                            println!("(debug) Erased path length: {}", current_path_steps.len() / 2);
+                            sleep(Duration::from_millis(self.debug.erased_ms));
+                            self.debug_clear_marks();
+                        }
+                        for (xi, yj) in current_path_steps.iter() {
+                            if *xi % 2 == 1 || *yj % 2 == 1 {
+                                self.grid[*yj as usize][*xi as usize] = '#';
+                            } else {
+                                self.cells[*yj as usize][*xi as usize].visited = false;
                             }
                         }
-                    }
-                    erase_path = false;
-                    continue;
-                }
-                else if erase_path {
-                    //println!("Erasing path!");
-                    for (xi, yj) in current_path_steps.iter() {
-                        if *xi % 2 == 1 || *yj % 2 == 1 {
-                            self.grid[*yj as usize][*xi as usize] = '#';
-                        } else {
-                            self.cells[*yj as usize][*xi as usize].visited = false;
-                        }
-                    }
-                    remaining_cells = Vec::new();
-                    for i in 0..self.height {
-                        for j in 0..self.width {
-                            if !self.cells[i][j].visited {
-                                remaining_cells.push((j as i32, i as i32));
+                        remaining_cells = Vec::new();
+                        for i in 0..self.height {
+                            for j in 0..self.width {
+                                if !self.cells[i][j].visited {
+                                    remaining_cells.push((j as i32, i as i32));
+                                }
                             }
                         }
+                        path_looped = false;
                     }
-                    erase_path = false;
+                    WalkOutcome::Restarted => {
+                        // restart the first walk entirely
+                        cell_x = rng.gen_range(0..(self.width / 2) as i32) * 2;
+                        cell_y = rng.gen_range(0..(self.height / 2) as i32) * 2;
+                        prev_move_x = 0;
+                        prev_move_y = 0;
+                        current_path_steps.clear();
+                        self.reset_grid();
+
+                        remaining_cells.clear();
+                        for i in 0..self.height {
+                            for j in 0..self.width {
+                                if !self.cells[i][j].visited {
+                                    remaining_cells.push((j as i32, i as i32));
+                                }
+                            }
+                        }
+                        path_looped = false;
+
+                        // jump back to walking from the new start
+                        continue;
+                    }
                 }
+
+                // After handling this path (accepted or erased):
                 current_path_steps = Vec::new();
+
                 if remaining_cells.is_empty() {
                     println!("No more remaining cells!");
                     break;
                 }
+
+                // Pick a new unvisited starting cell
                 (cell_x, cell_y) = *remaining_cells.choose(&mut rng).unwrap();
                 current_path_steps.push((cell_x, cell_y));
                 self.cells[cell_y as usize][cell_x as usize].visited = true;
-                remaining_cells = remaining_cells.into_iter().filter(|(xi, yj)| !self.cells[*yj as usize][*xi as usize].visited).collect::<Vec<(i32, i32)>>();
-                //println!("{:?} \nLeft: {}", remaining_cells, remaining_cells.len());
-                //println!("New cell chosen: {},{}", cell_x, cell_y);
+                remaining_cells = remaining_cells
+                    .into_iter()
+                    .filter(|(xi, yj)| !self.cells[*yj as usize][*xi as usize].visited)
+                    .collect::<Vec<(i32, i32)>>();
+
                 prev_move_x = 0;
                 prev_move_y = 0;
-
             }
 
-            //self.print();
-            //println!("Remaining cells left: {}", remaining_cells.len());
-            //println!("Current steps: {}", current_path_steps.len());
-            //sleep(Duration::from_millis(1));
+            if self.debug.enabled && self.debug.show_path_steps {
+                self.print();
+                println!("Remaining cells left: {}", remaining_cells.len());
+                println!("Current steps: {}", current_path_steps.len());
+                sleep(Duration::from_millis(self.debug.steps_ms));
+            }
         }
     }
 
@@ -332,13 +429,36 @@ impl Maze {
             print!("#");
             for x in 0..self.width {
                 if self.paths[y][x].visited {
-                    print!("{}", "o".red());
+                    print!("{}", "o".red()); // solved path stays red
                 } else {
-                    print!("{}", self.grid[y][x].to_string().normal());
+                    match self.debug_marks[y][x] {
+                        DebugMark::Accepted => print!("{}", "o".green()),
+                        DebugMark::Erased   => print!("{}", "o".red()),
+                        DebugMark::None     => print!("{}", self.grid[y][x].to_string().normal()),
+                    }
                 }
             }
             println!("#");
         }
         println!("{}{}", '#'.to_string().repeat(self.width), " #");
+    }
+
+    fn debug_mark_steps<I>(&mut self, steps: I, mark: DebugMark)
+    where
+        I: IntoIterator<Item = (i32, i32)>,
+    {
+        for (x, y) in steps {
+            if x >= 0 && y >= 0 && (x as usize) < self.width && (y as usize) < self.height {
+                self.debug_marks[y as usize][x as usize] = mark;
+            }
+        }
+    }
+
+    fn debug_clear_marks(&mut self) {
+        for row in &mut self.debug_marks {
+            for cell in row.iter_mut() {
+                *cell = DebugMark::None;
+            }
+        }
     }
 }

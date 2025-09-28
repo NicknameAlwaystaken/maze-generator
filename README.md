@@ -1,2 +1,6 @@
-Image of the program at the end.
-![](example_image.png)
+Image of complete maze with solution.
+![](docs/completed_maze.png)
+
+Small gif of generation of maze.
+![](docs/demo.gif)
+
