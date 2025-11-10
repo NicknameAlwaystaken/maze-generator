@@ -11,19 +11,6 @@ struct DebugMode {
     show_complete_paths: bool,
 }
 
-fn main() {
-    let debug: DebugMode = DebugMode {
-        enabled: true,
-        show_path_steps: true,
-        show_complete_paths: true,
-    };
-    let maze_size = (101, 41);
-    let mut maze = Maze::new(maze_size.0, maze_size.1, debug);
-    maze.generate_maze();
-    maze.print();
-    maze.find_path();
-}
-
 #[derive(Clone, Copy)]
 struct Cell {
     visited: bool,
@@ -356,3 +343,17 @@ impl Maze {
         println!("{}{}", '#'.to_string().repeat(self.width), " #");
     }
 }
+
+fn main() {
+    let debug: DebugMode = DebugMode {
+        enabled: true,
+        show_path_steps: true,
+        show_complete_paths: true,
+    };
+    let maze_size = (101, 41);
+    let mut maze = Maze::new(maze_size.0, maze_size.1, debug);
+    maze.generate_maze();
+    maze.print();
+    maze.find_path();
+}
+
