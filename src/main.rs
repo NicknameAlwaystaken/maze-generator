@@ -29,24 +29,6 @@ enum DebugMark {
     Erased,
 }
 
-fn main() {
-    let debug: DebugMode = DebugMode {
-        enabled: true,
-        show_path_steps: false,
-        show_complete_paths: true,
-        show_erased_paths: true,
-
-        steps_ms: 200,
-        complete_ms: 1000,
-        erased_ms: 200,
-    };
-    let maze_size = (101, 41);
-    let mut maze = Maze::new(maze_size.0, maze_size.1, debug);
-    maze.generate_maze();
-    maze.print();
-    maze.find_path();
-}
-
 #[derive(Clone, Copy)]
 struct Cell {
     visited: bool,
@@ -462,3 +444,17 @@ impl Maze {
         }
     }
 }
+
+fn main() {
+    let debug: DebugMode = DebugMode {
+        enabled: true,
+        show_path_steps: true,
+        show_complete_paths: true,
+    };
+    let maze_size = (101, 41);
+    let mut maze = Maze::new(maze_size.0, maze_size.1, debug);
+    maze.generate_maze();
+    maze.print();
+    maze.find_path();
+}
+
